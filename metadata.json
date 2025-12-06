@@ -1,0 +1,5 @@
+{
+  "name": "AuditPro - Control de Inventario",
+  "description": "Sistema profesional de auditoría de inventario con carga masiva, escaneo de códigos de barras y reportes de incidencias en PDF.",
+  "requestFramePermissions": []
+}
