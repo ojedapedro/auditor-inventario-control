@@ -1,3 +1,4 @@
+
 export interface InventoryItem {
   id: string; // usually SKU or Barcode
   sku: string;
@@ -11,7 +12,8 @@ export enum AuditStatus {
   IDLE = 'IDLE',
   SETUP = 'SETUP',
   ACTIVE = 'ACTIVE',
-  COMPLETED = 'COMPLETED'
+  COMPLETED = 'COMPLETED',
+  MANAGE_USERS = 'MANAGE_USERS'
 }
 
 export interface AuditSession {
@@ -36,5 +38,6 @@ export interface HistoryEntry {
 export interface User {
   username: string;
   name: string;
-  role: string;
+  role: 'Admin' | 'Auditor';
+  password?: string; // Optional for session object, required for storage
 }

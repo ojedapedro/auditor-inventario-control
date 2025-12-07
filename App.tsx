@@ -1,6 +1,8 @@
+
 import React, { useState, useEffect, useRef } from 'react';
-import { Upload, Barcode, FileText, History, CheckCircle, AlertTriangle, User, MapPin, Save, X, RotateCcw, Search, Lock, LogOut, ArrowRight } from 'lucide-react';
+import { Upload, Barcode, FileText, History, CheckCircle, AlertTriangle, User, MapPin, Save, X, RotateCcw, Search, Lock, LogOut, ArrowRight, Users, UserPlus, Trash2, Shield } from 'lucide-react';
 import { AuditService } from './services/auditService';
+import { UserService } from './services/userService';
 import { AuditSession, AuditStatus, InventoryItem, HistoryEntry, User as UserType } from './types';
 
 // Helper component for Cards
@@ -16,6 +18,11 @@ export default function App() {
   const [loginUsername, setLoginUsername] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
   const [loginError, setLoginError] = useState('');
+
+  // User Management State
+  const [usersList, setUsersList] = useState<UserType[]>([]);
+  const [newUser, setNewUser] = useState({ name: '', username: '', password: '', role: 'Auditor' });
+  const [userMsg, setUserMsg] = useState('');
 
   // App State
   const [status, setStatus] = useState<AuditStatus>(AuditStatus.IDLE);
@@ -34,6 +41,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
 
   useEffect(() => {
+    UserService.initialize();
     setHistory(AuditService.getHistory());
   }, []);
 
@@ -53,22 +61,12 @@ export default function App() {
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
-    // Mock Authentication Logic
-    if (loginUsername.toLowerCase() === 'admin' && loginPassword === '1234') {
-      setCurrentUser({
-        username: 'admin',
-        name: 'Administrador Principal',
-        role: 'Auditor Senior'
-      });
+    const user = UserService.authenticate(loginUsername, loginPassword);
+    
+    if (user) {
+      setCurrentUser(user);
       setLoginError('');
-    } else if (loginUsername !== '' && loginPassword !== '') {
-       // Allow other users for demo purposes if not empty
-       setCurrentUser({
-        username: loginUsername,
-        name: loginUsername.charAt(0).toUpperCase() + loginUsername.slice(1),
-        role: 'Auditor'
-      });
-      setLoginError('');
+      setLoginPassword('');
     } else {
       setLoginError('Credenciales inválidas. Intente nuevamente.');
     }
@@ -79,6 +77,38 @@ export default function App() {
     resetApp();
     setLoginUsername('');
     setLoginPassword('');
+    setLoginError('');
+  };
+
+  const handleAddUser = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newUser.name || !newUser.username || !newUser.password) {
+      setUserMsg('Por favor completa todos los campos.');
+      return;
+    }
+
+    const success = UserService.addUser({
+      name: newUser.name,
+      username: newUser.username,
+      password: newUser.password,
+      role: newUser.role as 'Admin' | 'Auditor'
+    });
+
+    if (success) {
+      setUsersList(UserService.getUsers());
+      setNewUser({ name: '', username: '', password: '', role: 'Auditor' });
+      setUserMsg('Usuario creado exitosamente.');
+      setTimeout(() => setUserMsg(''), 3000);
+    } else {
+      setUserMsg('El nombre de usuario ya existe.');
+    }
+  };
+
+  const handleDeleteUser = (username: string) => {
+    if (confirm(`¿Estás seguro de eliminar al usuario ${username}?`)) {
+      UserService.deleteUser(username);
+      setUsersList(UserService.getUsers());
+    }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -126,8 +156,6 @@ export default function App() {
 
     // Strategy 2: Space Separator (SKU QTY)
     if (foundIndex === -1) {
-      // Split by last space to separate potential quantity
-      // Logic: "ITEM NAME 123 50" -> SKU="ITEM NAME 123", QTY=50
       const lastSpaceIndex = searchInput.lastIndexOf(' ');
       if (lastSpaceIndex !== -1) {
         const potentialSku = searchInput.substring(0, lastSpaceIndex);
@@ -200,13 +228,9 @@ export default function App() {
     AuditService.saveToHistory(fullSession);
     AuditService.generatePDF(fullSession);
     setHistory(AuditService.getHistory());
-    
-    // Optional: Reset to IDLE after save
-    // setStatus(AuditStatus.IDLE);
   };
 
   const resetApp = () => {
-    // If logging out or resetting from dashboard, no confirmation needed if idle
     if (status === AuditStatus.IDLE && !currentUser) {
         setStatus(AuditStatus.IDLE);
         setItems([]);
@@ -214,8 +238,8 @@ export default function App() {
         return;
     }
 
-    if (status === AuditStatus.IDLE) {
-        // Just clearing setup data if any
+    if (status === AuditStatus.IDLE || status === AuditStatus.MANAGE_USERS) {
+        setStatus(AuditStatus.IDLE);
         setItems([]);
         setSessionData({});
         return;
@@ -287,12 +311,11 @@ export default function App() {
               <ArrowRight className="w-4 h-4 group-hover:translate-x-1 transition-transform" />
             </button>
           </form>
-
+          
           <div className="mt-6 pt-6 border-t border-gray-100 text-center">
-            <p className="text-xs text-gray-400">Credenciales Demo: admin / 1234</p>
+             <p className="text-xs text-gray-400">Default: admin / 123</p>
           </div>
         </Card>
-        
         <p className="text-center text-xs text-gray-400 mt-8">© 2024 AuditPro Inventory System</p>
       </div>
     </div>
@@ -301,7 +324,7 @@ export default function App() {
   const renderHeader = () => (
     <header className="bg-white border-b border-gray-200 sticky top-0 z-50">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-3 cursor-pointer" onClick={() => status !== AuditStatus.ACTIVE && resetApp()}>
           <img src="https://i.ibb.co/hFq3BtD9/Movilnet-logo-0.png" alt="Logo" className="h-8 object-contain" />
           <span className="text-xl font-bold text-gray-800 tracking-tight border-l pl-3 ml-1 border-gray-300 hidden sm:block">AuditPro</span>
         </div>
@@ -310,7 +333,7 @@ export default function App() {
           <div className="flex items-center gap-6">
             <div className="hidden md:flex flex-col items-end">
               <span className="text-sm font-semibold text-gray-800">{currentUser.name}</span>
-              <span className="text-xs text-gray-500">{currentUser.role}</span>
+              <span className="text-xs text-blue-600 font-medium bg-blue-50 px-2 py-0.5 rounded-full">{currentUser.role}</span>
             </div>
 
             <div className="h-8 w-px bg-gray-200 hidden md:block"></div>
@@ -322,7 +345,7 @@ export default function App() {
                   className="text-sm font-medium text-gray-500 hover:text-red-600 px-3 py-1.5 rounded-md hover:bg-red-50 transition-colors flex items-center gap-2"
                 >
                   <X className="w-4 h-4" /> 
-                  <span className="hidden sm:inline">Cancelar</span>
+                  <span className="hidden sm:inline">Cerrar Vista</span>
                 </button>
               )}
               
@@ -341,55 +364,189 @@ export default function App() {
   );
 
   const renderDashboard = () => (
-    <div className="max-w-5xl mx-auto px-4 py-8">
+    <div className="max-w-6xl mx-auto px-4 py-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-800">Panel de Control</h1>
         <p className="text-gray-500">Bienvenido de nuevo, {currentUser?.name}</p>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {/* New Audit Action */}
         <Card className="p-8 flex flex-col items-center justify-center text-center hover:shadow-md transition-shadow cursor-pointer border-dashed border-2 border-blue-200 bg-blue-50" >
           <div className="w-16 h-16 bg-blue-100 rounded-full flex items-center justify-center mb-4">
             <Barcode className="w-8 h-8 text-blue-600" />
           </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-2">Nuevo Inventario</h2>
-          <p className="text-gray-500 mb-6">Carga tu Excel y comienza a escanear.</p>
+          <h2 className="text-xl font-bold text-gray-900 mb-2">Nuevo Inventario</h2>
+          <p className="text-gray-500 text-sm mb-6">Carga tu Excel y comienza a escanear.</p>
           <button 
             onClick={() => setStatus(AuditStatus.SETUP)}
-            className="bg-blue-600 hover:bg-blue-700 text-white px-6 py-3 rounded-lg font-medium transition-colors shadow-lg shadow-blue-600/20"
+            className="w-full bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-blue-600/20"
           >
-            Comenzar Auditoría
+            Comenzar
           </button>
         </Card>
 
+        {/* User Management (Admin Only) */}
+        {currentUser?.role === 'Admin' && (
+          <Card className="p-8 flex flex-col items-center justify-center text-center hover:shadow-md transition-shadow">
+            <div className="w-16 h-16 bg-purple-100 rounded-full flex items-center justify-center mb-4">
+              <Users className="w-8 h-8 text-purple-600" />
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 mb-2">Gestionar Usuarios</h2>
+            <p className="text-gray-500 text-sm mb-6">Agregar o eliminar auditores del sistema.</p>
+            <button 
+              onClick={() => {
+                setUsersList(UserService.getUsers());
+                setStatus(AuditStatus.MANAGE_USERS);
+              }}
+              className="w-full bg-purple-600 hover:bg-purple-700 text-white px-4 py-2 rounded-lg font-medium transition-colors shadow-lg shadow-purple-600/20"
+            >
+              Administrar
+            </button>
+          </Card>
+        )}
+
         {/* Recent History */}
-        <Card className="p-6">
-          <div className="flex items-center justify-between mb-6">
+        <Card className="p-6 flex flex-col h-full">
+          <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-bold text-gray-800 flex items-center gap-2">
               <History className="w-5 h-5 text-gray-500" /> Historial Reciente
             </h3>
           </div>
           {history.length === 0 ? (
-            <div className="text-center py-8 text-gray-400">No hay auditorías registradas.</div>
+            <div className="flex-1 flex items-center justify-center text-center py-8 text-gray-400 text-sm">No hay auditorías registradas.</div>
           ) : (
-            <div className="space-y-4">
+            <div className="space-y-3 overflow-y-auto custom-scrollbar flex-1 max-h-64">
               {history.map((entry) => (
                 <div key={entry.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg border border-gray-100">
                   <div>
-                    <p className="font-semibold text-gray-800">{entry.storeName}</p>
-                    <p className="text-xs text-gray-500">{new Date(entry.date).toLocaleDateString()} • {entry.auditorName}</p>
+                    <p className="font-semibold text-gray-800 text-sm">{entry.storeName}</p>
+                    <p className="text-xs text-gray-500">{new Date(entry.date).toLocaleDateString()}</p>
                   </div>
                   <div className="text-right">
-                    <div className="text-sm font-medium text-gray-900">{entry.totalItems} Items</div>
-                    <div className={`text-xs ${entry.totalDiscrepancies > 0 ? 'text-red-500' : 'text-green-500'}`}>
-                      {entry.totalDiscrepancies === 0 ? 'Sin incidencias' : `${entry.totalDiscrepancies} incidencias`}
+                    <div className={`text-xs font-bold ${entry.totalDiscrepancies > 0 ? 'text-red-500' : 'text-green-500'}`}>
+                      {entry.totalDiscrepancies === 0 ? 'OK' : `${entry.totalDiscrepancies} Incidencias`}
                     </div>
                   </div>
                 </div>
               ))}
             </div>
           )}
+        </Card>
+      </div>
+    </div>
+  );
+
+  const renderUserManagement = () => (
+    <div className="max-w-4xl mx-auto px-4 py-8">
+      <div className="flex items-center gap-3 mb-6">
+        <Users className="w-8 h-8 text-purple-600" />
+        <h2 className="text-2xl font-bold text-gray-900">Gestión de Usuarios</h2>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+        {/* Form */}
+        <Card className="p-6 md:col-span-1 h-fit">
+          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+            <UserPlus className="w-5 h-5 text-gray-500" /> Agregar Usuario
+          </h3>
+          <form onSubmit={handleAddUser} className="space-y-4">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Nombre Completo</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+                value={newUser.name}
+                onChange={e => setNewUser({...newUser, name: e.target.value})}
+                placeholder="Juan Pérez"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Usuario</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+                value={newUser.username}
+                onChange={e => setNewUser({...newUser, username: e.target.value})}
+                placeholder="juanp"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Contraseña</label>
+              <input 
+                type="text" 
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm"
+                value={newUser.password}
+                onChange={e => setNewUser({...newUser, password: e.target.value})}
+                placeholder="123456"
+              />
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Rol</label>
+              <select 
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-purple-500 outline-none text-sm bg-white"
+                value={newUser.role}
+                onChange={e => setNewUser({...newUser, role: e.target.value})}
+              >
+                <option value="Auditor">Auditor</option>
+                <option value="Admin">Administrador</option>
+              </select>
+            </div>
+            
+            {userMsg && (
+               <div className={`text-xs p-2 rounded ${userMsg.includes('exitosamente') ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                 {userMsg}
+               </div>
+            )}
+
+            <button type="submit" className="w-full bg-purple-600 hover:bg-purple-700 text-white py-2 rounded-lg font-medium text-sm transition-colors">
+              Crear Usuario
+            </button>
+          </form>
+        </Card>
+
+        {/* List */}
+        <Card className="p-6 md:col-span-2">
+           <h3 className="font-bold text-gray-800 mb-4">Usuarios Registrados ({usersList.length})</h3>
+           <div className="overflow-x-auto">
+             <table className="w-full text-sm text-left">
+               <thead className="bg-gray-50 text-gray-600">
+                 <tr>
+                   <th className="px-4 py-2 rounded-tl-lg">Nombre</th>
+                   <th className="px-4 py-2">Usuario</th>
+                   <th className="px-4 py-2">Rol</th>
+                   <th className="px-4 py-2 rounded-tr-lg text-right">Acciones</th>
+                 </tr>
+               </thead>
+               <tbody className="divide-y divide-gray-100">
+                 {usersList.map(user => (
+                   <tr key={user.username} className="hover:bg-gray-50">
+                     <td className="px-4 py-3 font-medium text-gray-900">{user.name}</td>
+                     <td className="px-4 py-3 text-gray-500">{user.username}</td>
+                     <td className="px-4 py-3">
+                       <span className={`px-2 py-1 rounded-full text-xs font-bold ${user.role === 'Admin' ? 'bg-purple-100 text-purple-700' : 'bg-blue-100 text-blue-700'}`}>
+                         {user.role}
+                       </span>
+                     </td>
+                     <td className="px-4 py-3 text-right">
+                       {user.username !== 'admin' && user.username !== currentUser?.username && (
+                         <button 
+                           onClick={() => handleDeleteUser(user.username)}
+                           className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                           title="Eliminar usuario"
+                         >
+                           <Trash2 className="w-4 h-4" />
+                         </button>
+                       )}
+                       {user.username === 'admin' && (
+                         <Shield className="w-4 h-4 text-gray-300 inline-block" title="Usuario Sistema" />
+                       )}
+                     </td>
+                   </tr>
+                 ))}
+               </tbody>
+             </table>
+           </div>
         </Card>
       </div>
     </div>
@@ -425,7 +582,6 @@ export default function App() {
                   placeholder="Tu Nombre"
                   value={sessionData.auditorName || ''}
                   readOnly
-                  // onChange={e => setSessionData({...sessionData, auditorName: e.target.value})} // Disabled editing
                 />
               </div>
             </div>
@@ -761,6 +917,7 @@ export default function App() {
       {renderHeader()}
       <main>
         {status === AuditStatus.IDLE && renderDashboard()}
+        {status === AuditStatus.MANAGE_USERS && renderUserManagement()}
         {status === AuditStatus.SETUP && renderSetup()}
         {status === AuditStatus.ACTIVE && renderActiveAudit()}
         {status === AuditStatus.COMPLETED && renderCompleted()}
